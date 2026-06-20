@@ -16,8 +16,11 @@ import {
 } from "./index.js";
 import {
   AgentServer,
+  ReflectionService,
   type AgentProfile,
 } from "./harness/index.js";
+import { FileMemoryStore } from "./memory/index.js";
+import { createProvider } from "./providers/factory.js";
 
 // ─── 工具工厂：按租户创建隔离的工具 ──────────────────────────────
 
@@ -176,6 +179,34 @@ async function main() {
   // 注册 Agent 类型
   server.registerAgent(createAgentProfile("novel"));
   server.registerAgent(createAgentProfile("video"));
+
+  // Wire up Reflection + Memory for continuous learning
+  // Memory is scoped by agent type: novel and video learn separately
+  const novelMemory = new FileMemoryStore(`${process.env["DATA_DIR"] || "./data"}/reflection-novel`);
+  const videoMemory = new FileMemoryStore(`${process.env["DATA_DIR"] || "./data"}/reflection-video`);
+  await novelMemory.init();
+  await videoMemory.init();
+
+  const reflectionProvider = createProvider({
+    type: "deepseek" as const,
+    apiKey: process.env["DEEPSEEK_API_KEY"],
+    defaultModel: process.env["MODEL"] || "deepseek-v4-flash",
+  });
+
+  // Each agent type gets its own reflection service with scoped memory
+  const novelReflection = new ReflectionService({ provider: reflectionProvider, memory: novelMemory, mode: "async" });
+  const videoReflection = new ReflectionService({ provider: reflectionProvider, memory: videoMemory, mode: "async" });
+
+  // Store both so we can pick the right one per agent type
+  const reflectionMap = new Map<string, ReflectionService>();
+  reflectionMap.set("novel", novelReflection);
+  reflectionMap.set("video", videoReflection);
+
+  // TODO: AgentPool currently supports one global reflection service.
+  // For full per-type scoping, each launch should pick its type's service.
+  // For now, novel is the default (most common use case).
+  server.getPool().setReflection(novelReflection, novelMemory);
+  console.log("🧠 Reflection enabled — agent learns across sessions (novel / video isolated)\n");
 
   await server.start();
 

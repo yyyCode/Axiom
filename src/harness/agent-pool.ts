@@ -3,6 +3,7 @@ import {
   type AgentConfig,
   type AgentEvent,
   type StopReason,
+  type Message,
 } from "../types/index.js";
 import { type BaseProvider, type TokenUsage } from "../providers/base.js";
 import { createProvider } from "../providers/factory.js";
@@ -10,6 +11,8 @@ import { ToolRegistry, resolveTools } from "../tools/index.js";
 import { runAgentLoop } from "../core/agent-loop.js";
 import { type AgentProfile, type AgentTask, type AgentRunResult } from "./types.js";
 import { type SSEStream } from "./sse.js";
+import { ReflectionService } from "./reflection.js";
+import { type MemoryStore } from "../memory/store.js";
 
 // ─── Agent Instance ────────────────────────────────────────────────
 
@@ -38,6 +41,17 @@ export class AgentPool {
   private running = new Map<string, AgentInstance>();
   private tenantConcurrency = new Map<string, number>();
   private maxConcurrencyPerTenant = 5;
+  private reflectionService?: ReflectionService;
+  private memoryStore?: MemoryStore;
+  private sessionCount = 0;
+  private consolidationThreshold = 5; // Dream consolidation after N sessions
+
+  /** Set reflection service for automatic post-task learning */
+  setReflection(service: ReflectionService, store: MemoryStore): this {
+    this.reflectionService = service;
+    this.memoryStore = store;
+    return this;
+  }
 
   /** Register an agent profile */
   registerProfile(profile: AgentProfile): void {
@@ -220,6 +234,7 @@ export class AgentPool {
 
     let toolCallCount = 0;
     let turnCount = 0;
+    const toolErrors: string[] = [];
 
     try {
       task.progress = "Running agent loop...";
@@ -227,6 +242,19 @@ export class AgentPool {
       console.log(`[${runId.slice(0,8)}] Provider: ${config.provider.type}, Model: ${config.provider.model}`);
       console.log(`[${runId.slice(0,8)}] Tools: ${registry.listNames().join(", ")}`);
       console.log(`[${runId.slice(0,8)}] Prompt: ${prompt.slice(0, 100)}...`);
+
+      // Inject relevant memories from past reflections
+      if (this.memoryStore) {
+        const memContext = await new ReflectionService({
+          provider,
+          memory: this.memoryStore,
+          mode: "sync",
+        }).getRelevantMemories(prompt, 3);
+        if (memContext) {
+          config.context.systemPromptAppend = (config.context.systemPromptAppend ?? "") + memContext;
+          console.log(`[${runId.slice(0,8)}] 🧠 Injected past learnings`);
+        }
+      }
 
       const result = await runAgentLoop(
         {
@@ -273,6 +301,7 @@ export class AgentPool {
                 break;
               case "tool_error":
                 console.log(`[${runId.slice(0,8)}]   ❌ error: ${event.error.slice(0, 100)}`);
+                toolErrors.push(`${event.name}: ${event.error}`);
                 break;
               case "error":
                 console.error(`[${runId.slice(0,8)}] ❌ ${event.message}`);
@@ -296,6 +325,33 @@ export class AgentPool {
       task.result = { ...task.result, turns: turnCount };
       task.finishedAt = new Date().toISOString();
       console.log(`[${runId.slice(0,8)}] 📊 Usage: ${result.usage.inputTokens}+${result.usage.outputTokens} tokens, cost=$${task.result.costUsd}`);
+
+      // ─── Post-task Reflection ──────────────────────────────────
+      console.log(`[${runId.slice(0,8)}] reflectionService=${!!this.reflectionService} memoryStore=${!!this.memoryStore}`);
+      if (this.reflectionService) {
+        const contextInfo = `${task.agentType} agent task. Errors: ${toolErrors.length > 0 ? toolErrors.join("; ") : "none"}`;
+        const reflection = await this.reflectionService.reflect(
+          result.messages,
+          `${contextInfo}\n${prompt}`,
+          result.stopReason,
+        );
+        if (reflection.worthRemembering) {
+          console.log(`[${runId.slice(0,8)}] 💡 Learning: ${reflection.summary}`);
+        }
+        if (reflection.improvements.length > 0) {
+          console.log(`[${runId.slice(0,8)}] 🔧 Improvements: ${reflection.improvements.join(", ")}`);
+        }
+
+        // Check for Dream consolidation
+        this.sessionCount++;
+        if (this.sessionCount >= this.consolidationThreshold) {
+          const rule = await this.reflectionService.consolidate(this.consolidationThreshold);
+          if (rule) {
+            console.log(`[${runId.slice(0,8)}] 🌙 Dream consolidated: ${rule}`);
+          }
+          this.sessionCount = 0;
+        }
+      }
     } catch (err) {
       const isAbort = err instanceof Error && err.name === "AbortError";
       const isUserInterrupt = instance.abortController.signal.aborted;

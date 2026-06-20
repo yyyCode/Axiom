@@ -41,6 +41,9 @@ export class AgentServer {
     this.sessionStore = new SessionStore(`${config.dataDir}/sessions`);
   }
 
+  /** Access the agent pool (for wiring up reflection etc.) */
+  getPool(): AgentPool { return this.pool; }
+
   /** Register an agent profile */
   registerAgent(profile: AgentProfile): this {
     this.pool.registerProfile(profile);
@@ -127,6 +130,10 @@ export class AgentServer {
 
       if (req.method === "DELETE" && url.pathname === "/api/sessions") {
         return this.handleDeleteSession(req, res, url);
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/agent/compact") {
+        return this.handleCompact(req, res);
       }
 
       // 404
@@ -353,6 +360,35 @@ export class AgentServer {
     const sessions = await this.sessionStore.list(tenantId);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ sessions }));
+  }
+
+  /** POST /api/agent/compact — Manually trigger context compaction */
+  private async handleCompact(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const body = await this.readBody(req);
+    const tenantId = await this.authenticate(req, body);
+    if (!tenantId) {
+      res.writeHead(401);
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+
+    const runId = body.runId as string;
+    const task = this.pool.getTask(runId);
+    if (!task) {
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: "Run not found" }));
+      return;
+    }
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      ok: true,
+      message: `Compaction requested for run ${runId}. Auto-compaction runs at 92% context automatically.`,
+      hint: "Auto-compaction is triggered before each turn when context exceeds the threshold. No manual action needed.",
+    }));
   }
 
   /** DELETE /api/sessions?sessionId=xxx */

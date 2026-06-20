@@ -64,8 +64,12 @@ export async function runAgentLoop(
 
   // ─── Setup ───────────────────────────────────────────────────
   const systemBuilder = new SystemPromptBuilder(config);
-  const compactor = new ContextCompactor(config, provider);
+  const compactor = new ContextCompactor(
+    { maxTokens: config.context.maxTokens, compactionThreshold: config.context.compactionThreshold },
+    provider,
+  );
   const permissions = new PermissionChecker(config);
+  let compactCount = 0;
 
   const state: LoopState = {
     messages: [],
@@ -113,10 +117,21 @@ export async function runAgentLoop(
         systemBuilder.build(),
         registry.getAll(),
       );
-      if (compactor.shouldCompact(tokenCount, state.messages)) {
-        emit({ type: "compaction", fromTokens: tokenCount, toTokens: 0 });
-        state.messages = await compactor.compact(state.messages, systemBuilder.build());
+      const level = compactor.shouldCompact(tokenCount, state.messages);
+      if (level) {
+        const result = await compactor.compact(state.messages, systemBuilder.build(), level);
+        emit({
+          type: "compaction",
+          fromTokens: result.fromTokens,
+          toTokens: result.toTokens,
+        });
+        state.messages = result.messages;
         state.isCompacted = true;
+        compactCount++;
+        console.log(
+          `[compaction] ${result.level} compact: ${result.fromTokens} → ${result.toTokens} tokens ` +
+          `(boundary at index ${result.boundaryIndex}, #${compactCount})`,
+        );
       }
     }
 

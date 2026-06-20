@@ -16,6 +16,8 @@ export { AgentPool } from "./agent-pool.js";
 export { SSEStream, SSERegistry } from "./sse.js";
 export { WorkspaceSandbox, SandboxManager } from "./sandbox.js";
 export { SessionStore, type SessionRecord } from "./session-store.js";
+export { SelfHealExecutor, executeToolsWithHeal } from "./self-heal.js";
+export { ReflectionService } from "./reflection.js";
 export type {
   Tenant,
   AgentProfile,
@@ -25,3 +27,5 @@ export type {
   AgentRunResult,
   SSEMessage,
 } from "./types.js";
+export type { SelfHealConfig, SelfHealStats } from "./self-heal.js";
+export type { ReflectionConfig, ReflectionResult } from "./reflection.js";
