@@ -14,24 +14,35 @@ while (model returns tool_use) {
 }
 ```
 
-## 快速开始
+## 快速开始（CLI 模式）
 
 ```bash
-npm install @axiom/agent-kernel
+git clone https://github.com/yyyCode/Axiom.git
+cd Axiom
+npm install && npx tsc && npm link
+
+# 设置 API Key
+# Windows: set DEEPSEEK_API_KEY=sk-xxx
+# Mac/Linux: export DEEPSEEK_API_KEY=sk-xxx
+
+# 任意目录启动
+axiom
 ```
+
+支持 `/help` `/clear` `/compact` `/memory` `/cost` `/model` `/tools` `/session` 等斜杠命令。
+
+### SDK 模式
 
 ```typescript
 import { createProvider, defineTool, runAgentLoop, ToolRegistry, resolveTools } from "@axiom/agent-kernel";
 import { z } from "zod";
 
 const provider = createProvider({ type: "deepseek" });
-
 const myTool = defineTool(
   { name: "hello", description: "打个招呼" },
   { name: z.string() },
   async (input) => ({ content: `你好, ${input.name}!` }),
 );
-
 const registry = new ToolRegistry();
 registry.registerAll(resolveTools(["read_file", "write_file"], [myTool]));
 
@@ -40,20 +51,6 @@ const result = await runAgentLoop(
   "帮我写一段代码",
 );
 ```
-
-## 模块
-
-| 模块 | 功能 |
-|------|------|
-| `core/agent-loop` | 核心 while 循环 |
-| `core/tool-executor` | 并发/串行工具执行 |
-| `core/permission` | 单关卡权限系统 |
-| `core/subagent` | 子 Agent 隔离调度 |
-| `providers/` | Anthropic / OpenAI / DeepSeek 适配 |
-| `tools/builtin/` | 10+ 内置工具 |
-| `context/` | System Prompt + 3 层上下文压缩 |
-| `memory/` | Markdown 文件记忆 + SQLite 结构化存储 |
-| `session/` | 会话生命周期管理 |
 
 ## Provider 切换
 
