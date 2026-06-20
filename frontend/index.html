@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axiom Agent Console</title>
+<style>
+:root {
+  --bg: #0f0f13;
+  --surface: #1a1a24;
+  --surface2: #24243a;
+  --border: #2a2a3a;
+  --text: #e1e1e8;
+  --text2: #9090a8;
+  --accent: #7c5cfc;
+  --accent2: #5b3ee8;
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --red: #f87171;
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family:var(--font);
+  background:var(--bg); color:var(--text);
+  height:100vh; display:flex; flex-direction:column;
+}
+
+/* Header */
+header {
+  background:var(--surface); border-bottom:1px solid var(--border);
+  padding:12px 20px; display:flex; align-items:center; gap:12px;
+  flex-shrink:0;
+}
+header .logo { font-size:20px; font-weight:700; color:var(--accent); }
+header .logo span { color:var(--text2); font-weight:400; font-size:14px; }
+header .status { margin-left:auto; display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text2); }
+header .dot { width:8px; height:8px; border-radius:50%; background:var(--green); }
+header .dot.off { background:var(--red); }
+
+/* Layout */
+main { display:flex; flex:1; overflow:hidden; }
+
+/* Sidebar */
+.sidebar {
+  width:280px; background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; flex-shrink:0;
+}
+.sidebar-section { padding:16px; border-bottom:1px solid var(--border); }
+.sidebar-section h3 { font-size:12px; text-transform:uppercase; color:var(--text2); margin-bottom:10px; letter-spacing:.5px; }
+.agent-type { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:6px; cursor:pointer; margin-bottom:4px; transition:background .15s; }
+.agent-type:hover { background:var(--surface2); }
+.agent-type.active { background:var(--surface2); border:1px solid var(--accent); }
+.agent-type .icon { width:32px; height:32px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:16px; }
+.agent-type .info .name { font-size:14px; font-weight:500; }
+.agent-type .info .desc { font-size:11px; color:var(--text2); }
+
+/* Main area */
+.content { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+/* Prompt input */
+.prompt-area { padding:16px 20px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }
+.prompt-area textarea {
+  width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px;
+  color:var(--text); font-family:var(--font); font-size:14px; padding:12px;
+  resize:none; min-height:60px; outline:none; transition:border-color .15s;
+}
+.prompt-area textarea:focus { border-color:var(--accent); }
+.prompt-actions { display:flex; gap:8px; margin-top:8px; align-items:center; }
+.prompt-actions input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text2); font-size:12px; padding:6px 10px; outline:none; }
+.btn {
+  padding:8px 18px; border-radius:6px; border:none; font-size:14px; font-weight:500;
+  cursor:pointer; transition:all .15s; font-family:var(--font);
+}
+.btn-primary { background:var(--accent); color:#fff; }
+.btn-primary:hover { background:var(--accent2); }
+.btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+.btn-outline { background:transparent; color:var(--text2); border:1px solid var(--border); }
+.btn-outline:hover { background:var(--surface2); }
+.btn-danger { background:transparent; color:var(--red); border:1px solid var(--red); }
+.btn-danger:hover { background:var(--red); color:#fff; }
+
+/* Stream output */
+.output {
+  flex:1; overflow-y:auto; padding:20px; font-family:var(--mono); font-size:13px; line-height:1.7;
+  scroll-behavior: smooth;
+}
+.output .text-block { color:var(--text); white-space:pre-wrap; word-break:break-word; }
+.output .tool-call {
+  margin:8px 0; padding:10px 14px; background:var(--surface2); border-radius:6px;
+  border-left:3px solid var(--accent); font-family:var(--font);
+}
+.output .tool-call .tool-name { color:var(--accent); font-weight:600; font-size:13px; }
+.output .tool-call .tool-detail { color:var(--text2); font-size:12px; margin-top:4px; }
+.output .tool-call.tool-error { border-left-color:var(--red); }
+.output .tool-call.tool-error .tool-name { color:var(--red); }
+.output .lifecycle { color:var(--text2); font-size:11px; margin:4px 0; font-style:italic; }
+.output .done-block { margin:12px 0; padding:12px; background:color-mix(in srgb, var(--green) 10%, transparent); border:1px solid color-mix(in srgb, var(--green) 30%, transparent); border-radius:6px; font-family:var(--font); color:var(--green); }
+.output .error-block { color:var(--red); padding:8px; border-left:3px solid var(--red); }
+
+/* Empty state */
+.empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:var(--text2); gap:12px; }
+.empty-state .icon { font-size:48px; opacity:.5; }
+.empty-state p { font-size:15px; }
+.empty-state .hint { font-size:12px; opacity:.6; }
+
+/* Spinner */
+@keyframes spin { to { transform:rotate(360deg); } }
+.spinner { width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .6s linear infinite; display:inline-block; }
+
+/* Scrollbar */
+.output::-webkit-scrollbar { width:6px; }
+.output::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+/* Toast */
+.toast {
+  position:fixed; top:16px; right:16px; padding:12px 20px; border-radius:8px;
+  font-size:14px; z-index:100; animation:slideIn .3s ease;
+  box-shadow:0 4px 20px rgba(0,0,0,.4);
+}
+.toast.error { background:#451919; color:var(--red); border:1px solid var(--red); }
+.toast.success { background:#194519; color:var(--green); border:1px solid var(--green); }
+@keyframes slideIn { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⚡ Axiom <span>Agent Console</span></div>
+  <div class="status"><div class="dot" id="statusDot"></div><span id="statusText">Connecting...</span></div>
+</header>
+
+<main>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <h3>Agent Type</h3>
+      <div id="agentTypes"></div>
+    </div>
+    <div class="sidebar-section">
+      <h3>Session</h3>
+      <input id="sessionInput" type="text" placeholder="Session ID (optional)" spellcheck="false"
+        style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 10px;outline:none;">
+    </div>
+    <div class="sidebar-section" style="flex:1;overflow-y:auto;">
+      <h3>Recent Tasks</h3>
+      <div id="taskList" style="font-size:12px;color:var(--text2);">No tasks yet</div>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <div class="content">
+    <div class="prompt-area">
+      <textarea id="promptInput" placeholder="输入你的任务..." rows="2"></textarea>
+      <div class="prompt-actions">
+        <span id="runStatus" style="font-size:12px;color:var(--text2);"></span>
+        <div style="flex:1;"></div>
+        <button class="btn btn-outline" id="cancelBtn" style="display:none;">Cancel</button>
+        <button class="btn btn-primary" id="runBtn">▶ Run</button>
+      </div>
+    </div>
+    <div class="output" id="output">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">📝</div>
+        <p>选择一个 Agent 类型，输入任务，点击 Run</p>
+        <p class="hint">实时流式输出将显示在这里</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── State ──
+const STATE = {
+  serverUrl: localStorage.getItem('axiom_server') || 'http://localhost:3000',
+  agentTypes: [],
+  selectedAgent: null,
+  currentRunId: null,
+  eventSource: null,
+  running: false,
+  outputEl: null,
+};
+
+// ── DOM refs ──
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+// ── API ──
+async function api(path, opts = {}) {
+  const res = await fetch(`${STATE.serverUrl}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  return res.json();
+}
+
+// ── Toast ──
+function toast(msg, type = 'error') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ── Load agent types ──
+async function loadAgentTypes() {
+  try {
+    const data = await api('/api/agent/types');
+    STATE.agentTypes = data.agents || [];
+    renderAgentTypes();
+    updateStatus(true);
+  } catch (e) {
+    updateStatus(false);
+    toast('Cannot connect to server. Make sure the server is running.');
+  }
+}
+
+function renderAgentTypes() {
+  const container = $('#agentTypes');
+  const icons = { novel: '📖', video: '🎬', code: '💻', default: '🤖' };
+
+  container.innerHTML = STATE.agentTypes.map((a, i) => `
+    <div class="agent-type ${i === 0 ? 'active' : ''}" data-type="${a.type}">
+      <div class="icon">${icons[a.type] || icons.default}</div>
+      <div class="info">
+        <div class="name">${a.displayName || a.type}</div>
+        <div class="desc">${(a.description || '').slice(0,40)}</div>
+      </div>
+    </div>
+  `).join('');
+
+  if (STATE.agentTypes.length > 0) {
+    STATE.selectedAgent = STATE.agentTypes[0].type;
+  }
+
+  // Click handlers
+  container.querySelectorAll('.agent-type').forEach(el => {
+    el.addEventListener('click', () => {
+      container.querySelectorAll('.agent-type').forEach(e => e.classList.remove('active'));
+      el.classList.add('active');
+      STATE.selectedAgent = el.dataset.type;
+    });
+  });
+}
+
+function updateStatus(online) {
+  const dot = $('#statusDot');
+  const text = $('#statusText');
+  if (online) {
+    dot.classList.remove('off');
+    text.textContent = `${STATE.serverUrl} · ${STATE.agentTypes.length} agents`;
+  } else {
+    dot.classList.add('off');
+    text.textContent = 'Offline';
+  }
+}
+
+// ── Run agent ──
+async function runAgent() {
+  if (STATE.running) return;
+
+  const prompt = $('#promptInput').value.trim();
+  if (!prompt) { toast('Please enter a prompt'); return; }
+  if (!STATE.selectedAgent) { toast('Please select an agent type'); return; }
+
+  STATE.running = true;
+  STATE.outputEl = $('#output');
+  const emptyEl = $('#emptyState');
+  if (emptyEl) emptyEl.style.display = 'none';
+  STATE.outputEl.innerHTML = '';
+  $('#runBtn').disabled = true;
+  $('#cancelBtn').style.display = '';
+  $('#runStatus').innerHTML = '<span class="spinner"></span> Starting...';
+
+  try {
+    // 1. POST to start run
+    const sessionId = $('#sessionInput').value.trim() || undefined;
+    const res = await api('/api/agent/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        agentType: STATE.selectedAgent,
+        prompt,
+        sessionId,
+      }),
+    });
+
+    if (!res.ok) { toast(res.error || 'Failed to start'); resetUI(); return; }
+
+    STATE.currentRunId = res.runId;
+    $('#runStatus').textContent = `Running: ${res.runId.slice(0,8)}...`;
+
+    // Refresh tasks immediately
+    loadTasks();
+
+    // 2. Open SSE stream
+    connectSSE(res.runId);
+  } catch (e) {
+    toast('Failed to start: ' + e.message);
+    resetUI();
+  }
+}
+
+function connectSSE(runId) {
+  const url = `${STATE.serverUrl}/api/agent/stream?runId=${runId}`;
+  STATE.eventSource = new EventSource(url);
+
+  STATE.eventSource.addEventListener('connected', (e) => {
+    appendText(`[Connected to run ${runId.slice(0,8)}...]\n\n`);
+    loadTasks();
+  });
+
+  STATE.eventSource.addEventListener('text', (e) => {
+    const { data } = JSON.parse(e.data);
+    appendText(data.text);
+    scrollToBottom();
+  });
+
+  STATE.eventSource.addEventListener('tool', (e) => {
+    const { data } = JSON.parse(e.data);
+    const cls = data.action === 'error' ? 'tool-error' : '';
+    if (data.action === 'start') {
+      appendToolCall(data.name, data.input, data.id, cls);
+    } else if (data.action === 'result') {
+      updateToolResult(data.id, data.output, '');
+    } else if (data.action === 'error') {
+      updateToolResult(data.id, '', data.error);
+    }
+    scrollToBottom();
+  });
+
+  STATE.eventSource.addEventListener('lifecycle', (e) => {
+    const { data } = JSON.parse(e.data);
+    appendLifecycle(`${data.phase}: ${JSON.stringify(data)}`);
+    scrollToBottom();
+  });
+
+  STATE.eventSource.addEventListener('done', (e) => {
+    const { data } = JSON.parse(e.data);
+    appendDone(data);
+    resetUI();
+    loadTasks();
+  });
+
+  STATE.eventSource.addEventListener('error', (e) => {
+    if (STATE.eventSource?.readyState === EventSource.CLOSED) {
+      // Connection closed
+      if (STATE.running) {
+        appendError('Connection lost. The agent may still be running.');
+        resetUI();
+      }
+    } else {
+      try {
+        const { data } = JSON.parse(e.data);
+        appendError(data.message || 'Unknown error');
+        scrollToBottom();
+      } catch {}
+    }
+  });
+}
+
+// ── Output helpers ──
+function appendText(text) {
+  const div = document.createElement('div');
+  div.className = 'text-block';
+  div.textContent = text;
+  STATE.outputEl.appendChild(div);
+}
+
+function appendToolCall(name, input, id, extraClass) {
+  const div = document.createElement('div');
+  div.className = `tool-call ${extraClass}`;
+  div.id = `tool-${id}`;
+  div.innerHTML = `
+    <div class="tool-name">🔧 ${name}</div>
+    <div class="tool-detail">${JSON.stringify(input).slice(0, 200)}</div>
+  `;
+  STATE.outputEl.appendChild(div);
+}
+
+function updateToolResult(id, output, error) {
+  const el = document.getElementById(`tool-${id}`);
+  if (!el) return;
+  const detail = el.querySelector('.tool-detail');
+  if (error) {
+    el.classList.add('tool-error');
+    detail.textContent = `❌ ${error.slice(0, 300)}`;
+  } else {
+    detail.textContent = output.slice(0, 300);
+  }
+}
+
+function appendLifecycle(text) {
+  const div = document.createElement('div');
+  div.className = 'lifecycle';
+  div.textContent = text;
+  STATE.outputEl.appendChild(div);
+}
+
+function appendDone(data) {
+  const div = document.createElement('div');
+  div.className = 'done-block';
+  div.textContent = `✅ Done — Reason: ${data.reason}`;
+  STATE.outputEl.appendChild(div);
+}
+
+function appendError(msg) {
+  const div = document.createElement('div');
+  div.className = 'error-block';
+  div.textContent = `❌ ${msg}`;
+  STATE.outputEl.appendChild(div);
+}
+
+function scrollToBottom() {
+  const el = STATE.outputEl.parentElement;
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+// ── Reset ──
+function resetUI() {
+  STATE.running = false;
+  STATE.currentRunId = null;
+  $('#runBtn').disabled = false;
+  $('#cancelBtn').style.display = 'none';
+  $('#runStatus').textContent = '';
+  if (STATE.eventSource) {
+    STATE.eventSource.close();
+    STATE.eventSource = null;
+  }
+}
+
+async function cancelRun() {
+  if (!STATE.currentRunId) return;
+  try {
+    await api('/api/agent/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ runId: STATE.currentRunId }),
+    });
+    appendText('\n[Cancelled by user]\n');
+    resetUI();
+  } catch (e) {
+    toast('Failed to cancel: ' + e.message);
+  }
+}
+
+// ── Tasks list ──
+async function loadTasks() {
+  try {
+    const data = await api('/api/agent/tasks');
+    const tasks = (data.tasks || []).slice(0, 10);
+    const el = $('#taskList');
+    if (tasks.length === 0) { el.innerHTML = '<span style="color:var(--text2)">No tasks yet</span>'; return; }
+    el.innerHTML = tasks.map(t => {
+      const icon = t.status === 'completed' ? '✅' : t.status === 'running' ? '⏳' : t.status === 'queued' ? '📋' : '⏹';
+      return `<div style="margin-bottom:6px;padding:6px;background:var(--surface2);border-radius:4px;">
+        ${icon} <b>${t.agentType}</b> — ${t.status}<br>
+        <span style="font-size:10px;opacity:.6;">${new Date(t.createdAt).toLocaleTimeString()} · ${t.runId?.slice(0,8)}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    console.error('loadTasks error:', e);
+    $('#taskList').innerHTML = '<span style="color:var(--red)">Failed to load</span>';
+  }
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  $('#runBtn').addEventListener('click', runAgent);
+  $('#cancelBtn').addEventListener('click', cancelRun);
+  $('#promptInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runAgent(); }
+  });
+
+  loadAgentTypes();
+  loadTasks();
+  setInterval(loadTasks, 10000); // Refresh tasks every 10s
+});
+</script>
+</body>
+</html>
