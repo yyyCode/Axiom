@@ -121,6 +121,38 @@ export function toAgentConfig(cliConfig: CLIConfig, instructions?: string): Agen
   };
 }
 
+/** Build CLIConfig from AxiomSettings */
+export function cliConfigFromSettings(
+  cwd: string,
+  settings: import("./settings.js").AxiomSettings,
+): CLIConfig {
+  const home = process.env["HOME"] || process.env["USERPROFILE"] || ".";
+
+  return {
+    provider: {
+      type: settings.provider?.type ?? "deepseek",
+      model: settings.provider?.model ?? "deepseek-v4-flash",
+      apiKey: process.env[settings.provider?.apiKeyEnv ?? "DEEPSEEK_API_KEY"] ?? "",
+    },
+    display: {
+      color: settings.display?.color ?? true,
+      showTokens: settings.display?.showTokens ?? true,
+      showCost: settings.display?.showCost ?? true,
+      compactWidth: process.stdout.columns || 80,
+    },
+    session: {
+      persistPath: settings.session?.persistPath ?? join(home, ".axiom", "sessions"),
+      autoResume: settings.session?.autoResume ?? true,
+      maxHistoryFiles: 50,
+    },
+    permission: settings.permission ?? "default",
+    project: {
+      instructionsFile: settings.project?.instructionsFile ?? "AGENTS.md",
+      loadGitStatus: settings.project?.loadGitStatus ?? true,
+    },
+  };
+}
+
 /** Load AGENTS.md from project root */
 export function loadInstructionsFile(cwd: string, filename: string): string | undefined {
   const filePath = join(cwd, filename);

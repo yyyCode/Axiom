@@ -23,7 +23,7 @@ export interface CommandContext {
 // ─── Built-in Commands ────────────────────────────────────────────
 
 export function builtinCommands(): Command[] {
-  return [helpCommand, clearCommand, compactCommand, memoryCommand, costCommand, modelCommand, toolsCommand, sessionCommand];
+  return [helpCommand, clearCommand, compactCommand, memoryCommand, costCommand, modelCommand, toolsCommand, sessionCommand, configCommand];
 }
 
 const helpCommand: Command = {
@@ -160,6 +160,53 @@ const sessionCommand: Command = {
       `Tokens:     ${(ctx.totalTokens.input + ctx.totalTokens.output).toLocaleString()}`,
       `Cost:       $${ctx.totalCost.toFixed(4)}`,
       `Auto-resume: ${ctx.config.session.autoResume ? "on" : "off"}`,
+    ].join("\n");
+  },
+};
+
+const configCommand: Command = {
+  name: "config",
+  aliases: ["settings"],
+  description: "View or edit settings",
+  usage: "/config [view|init|set <key> <value>]",
+  execute: async (args, ctx) => {
+    const { SettingsLoader } = await import("./settings.js");
+    const loader = new SettingsLoader(ctx.cwd);
+    const sub = args[0] || "view";
+
+    if (sub === "init") {
+      const scope = args[1] || "project";
+      const path = loader.init(scope as "global" | "project");
+      return `Settings initialized: ${path}`;
+    }
+
+    if (sub === "set") {
+      const key = args[1];
+      const value = args[2];
+      if (!key) return "Usage: /config set <key> <value>";
+      const s = loader.load();
+      const parts = key.split(".");
+      if (parts.length === 2 && parts[0] && parts[1]) {
+        const section = (s as Record<string, unknown>)[parts[0]] as Record<string, unknown>;
+        if (section) section[parts[1]] = value;
+      } else {
+        (s as Record<string, unknown>)[key] = value;
+      }
+      loader.saveProject(s);
+      return `Set ${key} = ${value}`;
+    }
+
+    // view
+    const settings = loader.load();
+    return [
+      `Provider:   ${settings.provider?.type} / ${settings.provider?.model}`,
+      `Display:    color=${settings.display?.color} tokens=${settings.display?.showTokens} cost=${settings.display?.showCost}`,
+      `Permission: ${settings.permission}`,
+      `Project:    instructionsFile=${settings.project?.instructionsFile} git=${settings.project?.loadGitStatus}`,
+      `Limits:     maxTurns=${settings.limits?.maxTurns} budget=$${settings.limits?.maxBudgetUsd}`,
+      ``,
+      `Use /config init to create a project settings file`,
+      `Use /config set <key> <value> to modify`,
     ].join("\n");
   },
 };

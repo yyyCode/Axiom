@@ -11,9 +11,11 @@ import { SessionManager, type Session } from "../session/manager.js";
 import {
   type CLIConfig,
   defaultCLIConfig,
+  cliConfigFromSettings,
   toAgentConfig,
   loadInstructionsFile,
 } from "./config.js";
+import { SettingsLoader, getSettingsPaths, type AxiomSettings } from "./settings.js";
 import { builtinCommands, type CommandContext } from "./commands.js";
 import { StreamView } from "./stream-view.js";
 import { PermissionPrompt } from "./permission-prompt.js";
@@ -35,10 +37,19 @@ interface REPLState {
 // ─── CLI REPL ─────────────────────────────────────────────────────
 
 export async function startREPL(cwd: string, cliConfig?: Partial<CLIConfig>): Promise<void> {
-  // ─── Setup ──────────────────────────────────────────────────
-  const config = { ...defaultCLIConfig(), ...cliConfig };
+  // ─── Load Settings ──────────────────────────────────────────
+  const settingsLoader = new SettingsLoader(cwd);
+  // Init defaults on first run
+  settingsLoader.init("global");
+
+  const settings = settingsLoader.load();
+  const config = cliConfigFromSettings(cwd, settings);
+
+  // Override with any passed-in CLI config
+  if (cliConfig) Object.assign(config, cliConfig);
+
   const projectCtx = loadProjectContext(cwd, config.project.instructionsFile);
-  const instructions = loadInstructionsFile(cwd, "AGENTS.md") ??
+  const instructions = loadInstructionsFile(cwd, config.project.instructionsFile) ??
     loadInstructionsFile(cwd, "CLAUDE.md");
   const agentConfig = toAgentConfig(config, instructions);
 
@@ -94,6 +105,7 @@ export async function startREPL(cwd: string, cliConfig?: Partial<CLIConfig>): Pr
   };
 
   // ─── Banner ──────────────────────────────────────────────────
+  const settingsPaths = getSettingsPaths(cwd);
   console.log(`\n⚡ ${bold("Axiom CLI Agent", config.display.color)}`);
   console.log(`${dim("Provider:", config.display.color)} ${config.provider.type} / ${config.provider.model}`);
   console.log(`${dim("Project:", config.display.color)}  ${cwd}`);
@@ -103,6 +115,7 @@ export async function startREPL(cwd: string, cliConfig?: Partial<CLIConfig>): Pr
   if (instructions) {
     console.log(`${dim("Config:", config.display.color)}  ${config.project.instructionsFile} loaded (${instructions.length} chars)`);
   }
+  console.log(`${dim("Settings:", config.display.color)} ${settingsPaths.global}`);
   console.log(`${dim("Commands:", config.display.color)} /help for slash commands\n`);
 
   // ─── Main Loop ───────────────────────────────────────────────
